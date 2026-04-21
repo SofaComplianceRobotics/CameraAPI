@@ -48,21 +48,21 @@ if __name__ == "__main__":
 
         logger.info("Opening and configuring EMIO Camera...")
 
-        emio = Camera(show=True, track_markers=True, compute_point_cloud=True)
-        emio.fps = 30 # sets the fps to 30. Default is 60 and can only be one of 30. 60 or 90fps
-        emio.depth_max = 600 # sets the maximum depth to 600mm. Default is 430mm
-        emio.depth_min = 0 # sets the minimum depth to 0mm. Default is 2mm
+        cam = Camera(show=True, track_markers=True, compute_point_cloud=True)
+        cam.fps = 30 # sets the fps to 30. Default is 60 and can only be one of 30. 60 or 90fps
+        cam.depth_max = 600 # sets the maximum depth to 600mm. Default is 430mm
+        cam.depth_min = 0 # sets the minimum depth to 0mm. Default is 2mm
 
-        if emio.open(): # This will open the first available Realsense camera
+        if cam.open(): # This will open the first available Realsense camera
 
-            logger.info(f"Emio camera {emio.camera_serial} opened.")
+            logger.info(f"Emio camera {cam.camera_serial} opened.")
             logger.info("Running main function...")
-            main(emio)
+            main(cam)
 
             logger.info("Main function completed.")
             logger.info("Closing Emio API...")
 
-            emio.close()
+            cam.close()
 
             logger.info("EMIO API closed.")
     except Exception as e:

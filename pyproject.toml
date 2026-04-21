@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "HanaeRateau", email = "hanaerateau@yahoo.fr" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
     "opencv-python>=4.13.0.92",
     "pillow>=12.2.0",
