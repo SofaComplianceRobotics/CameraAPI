@@ -1,0 +1,21 @@
+[project]
+name = "cameraapi"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "HanaeRateau", email = "hanaerateau@yahoo.fr" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "opencv-python>=4.13.0.92",
+    "pillow>=12.2.0",
+    "pyrealsense2>=2.57.7.10387",
+]
+
+[project.scripts]
+cameraapi-calibrate = "cameraapi:__main__.calibrate"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
