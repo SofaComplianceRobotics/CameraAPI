@@ -1,7 +1,7 @@
 import threading
 import numpy as np
 
-from cameraapi._depthcamera import *
+from cameraapi.depthcamera import *
 from cameraapi._logging_config import logger
 
 class Camera:
@@ -88,7 +88,7 @@ class Camera:
             self._parameter = parameter
 
         self._camera = DepthCamera(camera_serial=self.camera_serial,
-                                       parameter=self._parameter,
+                                       parameters=self._parameter,
                                        compute_point_cloud=self._compute_point_cloud,
                                        show_video_feed=self._show,
                                        tracking=self._tracking)
@@ -214,7 +214,7 @@ class Camera:
         Returns:
             dict: The camera parameters.
         """
-        return self._camera.parameter if self._camera else DEFAULT_CAMERA_PARAMS
+        return self._camera._parameters if self._camera else DEFAULT_CAMERA_PARAMS
 
 
     @parameters.setter
@@ -445,7 +445,7 @@ class Camera:
         if self.is_running:
             if depth is None:
                 depth = self._camera.depth_frame[y][x]
-            return self._camera.position_estimator.camera_image_to_simulation(x, y, depth)
+            return self._camera._position_estimator.camera_to_world(x, y, depth)
 
         return None
 
@@ -457,8 +457,8 @@ class Camera:
         if self._camera is not None:
             self._camera.update()
             with self._lock:
-                self._hsv_frame = self._camera.hsvFrame
-                self._mask_frame = self._camera.maskFrame
+                self._hsv_frame = self._camera.hsv_frame
+                self._mask_frame = self._camera.mask_frame
                 if self._tracking:
                     self._trackers_pos = []
                     for p_camera in self._camera.trackers_pos:

@@ -5,27 +5,25 @@ import logging
 import os
 import sys
 
-import cameraapi
+from cameraapi.depthcamera import DepthCamera, list_cameras
 
 sys.path.append(os.path.dirname(os.path.realpath(__file__))+'/..')
-from cameraapi import Camera
 from cameraapi._logging_config import logger
 
 
-def main(camera: Camera):
+def main(camera: DepthCamera):
 
-    # emio.calibrate()  # calibrate the camera if needed
+    print("Camera parameters:", camera.parameters)
 
-    while camera.is_running:
+    while camera:
         try:
             camera.update() # update the camera frame and trackers
 
             print("-"*20)
             logger.info(f"Camera parameters: {camera.parameters}")
-            logger.info(f"Camera show: {camera.show_frames}")
-            logger.info(f"Camera tracking: {camera.track_markers}")
+            logger.info(f"Camera show: {camera.show_video_feed}")
+            logger.info(f"Camera tracking: {camera.tracking}")
             logger.info(f"Camera compute point cloud: {camera.compute_point_cloud}")
-            logger.info(f"Camera is running: {camera.is_running}")
             logger.info(f"Count tracker: {len(camera.trackers_pos)}")
             logger.info(f"Trackers positions: {camera.trackers_pos}")
             logger.info(f"Point cloud shape: {camera.point_cloud.shape}")
@@ -44,26 +42,35 @@ if __name__ == "__main__":
     try:
         logger.info("Starting EMIO Camera test...")
 
-        logger.info("List of available cameras\n"+str(cameraapi.listCameras()))
+        logger.info("List of available cameras\n"+str(list_cameras()))
 
-        logger.info("Opening and configuring EMIO Camera...")
+        logger.info("Opening and configuring DepthCamera...")
 
-        cam = Camera(show=True, track_markers=True, compute_point_cloud=True)
+
+        import numpy as np
+        corners = np.array([[ -49.497475, -230.      ,    0.      ],
+                            [   0.      , -230.      ,  -49.497475],
+                            [  49.497475, -230.      ,    0.      ],
+                            [   0.      , -230.      ,   49.497475]])
+
+        cam = DepthCamera(show_video_feed=True, tracking=True, compute_point_cloud=True)
         cam.fps = 30 # sets the fps to 30. Default is 60 and can only be one of 30. 60 or 90fps
         cam.depth_max = 600 # sets the maximum depth to 600mm. Default is 430mm
         cam.depth_min = 0 # sets the minimum depth to 0mm. Default is 2mm
 
         if cam.open(): # This will open the first available Realsense camera
 
-            logger.info(f"Emio camera {cam.camera_serial} opened.")
+            logger.info(f"Depth camera {cam.camera_serial} opened.")
             logger.info("Running main function...")
             main(cam)
 
             logger.info("Main function completed.")
-            logger.info("Closing Emio API...")
+            logger.info("Closing API...")
 
             cam.close()
 
-            logger.info("EMIO API closed.")
+            logger.info("API closed.")
+        else:
+            logger.error("Failed to open camera.")
     except Exception as e:
         logger.exception(f"An error occurred: {e}")

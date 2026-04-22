@@ -6,6 +6,65 @@ from typing import Tuple, Any
 
 class DepthCameraInterface(ABC):
     """Abstract base class for depth camera implementations"""
+
+    _height: int = 480
+    _width: int = 640
+    _fps: int = 30
+
+    _initialized = False
+
+    #####################
+    # Camera parameters
+    #####################
+
+    @property
+    def camera_serial(self) -> str:
+        """Get the camera serial number"""
+        pass
+    
+    @property
+    def height(self) -> int:
+        """Get the camera frame height"""
+        return self._height
+    
+    @height.setter
+    def height(self, value: int):
+        """Set the camera frame height"""
+        self._height = value
+    
+    @property
+    def width(self) -> int:
+        """Get the camera frame width"""
+        return self._width
+
+    @width.setter
+    def width(self, value: int):
+        """Set the camera frame width"""
+        self._width = value
+
+    @property
+    def fps(self) -> int:
+        """Get the camera frames per second (fps)"""
+        return self._fps
+    
+    @fps.setter
+    def fps(self, value: int):
+        """Set the camera frames per second (fps)"""
+        self._fps = value
+
+    @property
+    def initialized(self) -> bool:
+        """Check if the camera is initialized"""
+        return self._initialized
+    
+    @initialized.setter
+    def initialized(self, value: bool):
+        """Set the camera initialized state"""
+        self._initialized = value
+
+    ##########################
+    # Camera control methods
+    ##########################
     
     @abstractmethod
     def open(self) -> bool:
@@ -71,21 +130,4 @@ class DepthCameraInterface(ABC):
             np.ndarray: Colorized depth image
         """
         pass
-    
-    @property
-    @abstractmethod
-    def camera_serial(self) -> str:
-        """Get the camera serial number"""
-        pass
-    
-    @property
-    @abstractmethod
-    def width(self) -> int:
-        """Get the camera frame width"""
-        pass
-    
-    @property
-    @abstractmethod
-    def height(self) -> int:
-        """Get the camera frame height"""
-        pass
+

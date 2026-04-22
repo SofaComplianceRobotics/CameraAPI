@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import cv2 as cv
 import json
@@ -6,10 +8,10 @@ import csv
 from pathlib import Path
 from shutil import copyfile
 
-from src.cameraapi._logging_config import logger
+from cameraapi._logging_config import logger
 
 
-CONFIG_DIR = Path.home().joinpath(".config", "emioapi")
+CONFIG_DIR = Path.home().joinpath(".config", "cameraapi")
 
 DEFAULT_CONFIG_FILE = Path(__file__).parent.joinpath("config/cameraparameter.json")
 CONFIG_FILENAME = CONFIG_DIR.joinpath("config/cameraparameter.json")
@@ -25,9 +27,9 @@ if not CALIBRATION_FILENAME.exists():
     CONFIG_DIR.joinpath("config").mkdir(parents=True, exist_ok=True)
     copyfile(DEFAULT_CALIBRATION_FILE, CALIBRATION_FILENAME)
 
+ARUCO_MARKER_DEFAULT_ID = 672
 
-
-COUNT_POINTS = 9 # Number of points in the calibration board (4 corners + 4 middle points + 1 center)
+COUNT_CALIBRATION_POINTS = 9 # Number of points in the calibration board (4 corners + 4 middle points + 1 center)
 
 
 def compute_transform_from_pointclouds(image_cloud:np.ndarray, absolute_cloud:np.ndarray)  -> tuple[np.ndarray, np.ndarray]:
@@ -109,38 +111,75 @@ class PositionEstimation:
     """
     This class is used to calculate the real world coordinates based on the pixel coordinates and the depth
 
+    The calibration process is based on the detection of a single ArUco marker with a known position in the world space and position.
+    You need to provide the intrinsic parameters of the camera, the ID of the ArUco marker to be detected and the size and position of the marker in the world space.
+    The default marker ID is 672, but it can be changed at initialization. 
+    The calibration process will run until the marker is detected and the camera-to-world transform is computed, 
+    or until a timeout of 5 minutes is reached.
+
+    A calibration file is created during the calibration process, and the camera-to-world transform is computed 
+    based on the last calibration data.
+
+    The calibraiton points are defined as the 4 corners of the marker, the middle points between the corners and 
+    the center of the marker.
+
+    During calibration, the corners of the marker are detected and their positions in the camera space are 
+    calculated based on their pixel coordinates and depth values.
+    
+    You can choose to aggregate the corners positions over multiple frames, the mean value is then used for 
+    the calibration, or to use only the corners positions of the current frame for the calibration.
+
     """
 
-    def __init__(self, cameraintrinsinc) -> None:
-        self.calibration_points=np.zeros((COUNT_POINTS, 3))
+    def __init__(self, cameraintrinsinc, aruco_corners: np.ndarray=None, aruco_marker_id=ARUCO_MARKER_DEFAULT_ID, calibration_file: str=CALIBRATION_FILENAME, config_file: str=CONFIG_FILENAME) -> None:
+        """
+        Initialize the position estimation class
+        
+        Args:
+            cameraintrinsinc: object
+                The intrinsic values of the realsesnse camera See https://intelrealsense.github.io/librealsense/python_docs/_generated/pyrealsense2.intrinsics.html
+
+            aruco_corners: np.ndarray
+                The corners of the ArUco marker in the world space, defined as a 4x3 array (4 corners with x,y,z coordinates). 
+                The order of the corners should be the same as the order of the corners detected in the image (top-left, top-right, bottom-right, bottom-left)
+
+            aruco_marker_id: int
+                The ID of the ArUco marker to be detected for calibration (default is 672)
+        """
+        self.calibration_points=np.zeros((COUNT_CALIBRATION_POINTS, 3))
         self.R=np.zeros((9,3))
         self.t=np.zeros((3))
         self.intr= cameraintrinsinc if cameraintrinsinc else None
+        self.aruco_corners = aruco_corners
+        self.aruco_marker_id = aruco_marker_id
+        self.calibration_file = calibration_file
+        self.config_file = config_file
+
         self.points = []
         self.trackers_pos = []
         self.initialized = False
         self.count_calibration_frames = 0
-        elevator = 70
-        arucoThickness = 3
-        platformY = -303
-        y = platformY + elevator + arucoThickness 
-        self.calibrationboard_size = (70.0, y, 70.0)  # Size of the calibration board in mm (width, height, depth)
 
-        hypotenuse = np.sqrt(self.calibrationboard_size[0]**2 + self.calibrationboard_size[2]**2)/2.0
-        self.calibration_points[0] = [-hypotenuse, self.calibrationboard_size[1], 0.0]
-        self.calibration_points[1] = [0.0, self.calibrationboard_size[1], -hypotenuse]
-        self.calibration_points[2] = [hypotenuse, self.calibrationboard_size[1], 0.0]
-        self.calibration_points[3] = [0.0, self.calibrationboard_size[1], hypotenuse]
-        # Calculate the middle points of the edges
-        self.calibration_points[4] = (self.calibration_points[0] + self.calibration_points[1]) /2.0
-        self.calibration_points[5] = (self.calibration_points[1] + self.calibration_points[2]) /2.0
-        self.calibration_points[6] = (self.calibration_points[2] + self.calibration_points[3]) /2.0
-        self.calibration_points[7] = (self.calibration_points[3] + self.calibration_points[0]) /2.0
-        # Add the center of the calibration board
-        self.calibration_points[-1] = [0, self.calibrationboard_size[1], 0]
+        # calibration
+        if self.aruco_corners is not None and self.aruco_corners.shape == (4, 3):
+            self.calibration_points[0] = aruco_corners[0]  # top-left corner of the marker
+            self.calibration_points[1] = aruco_corners[1]  # top-right corner of the marker
+            self.calibration_points[2] = aruco_corners[2]  # bottom-right corner of the marker
+            self.calibration_points[3] = aruco_corners[3]  # bottom-left corner of the marker
+            # Calculate the middle points of the edges
+            self.calibration_points[4] = (self.calibration_points[0] + self.calibration_points[1]) /2.0
+            self.calibration_points[5] = (self.calibration_points[1] + self.calibration_points[2]) /2.0
+            self.calibration_points[6] = (self.calibration_points[2] + self.calibration_points[3]) /2.0
+            self.calibration_points[7] = (self.calibration_points[3] + self.calibration_points[0]) /2.0
+            # Add the center of the calibration board
+            self.calibration_points[8] = aruco_corners.mean(axis=0)  # center of the marker
 
-        logger.debug(f"Calibration Points: {self.calibration_points}")
+            logger.info(f"Calibration Points: {self.calibration_points}")
 
+        elif aruco_corners is None or aruco_corners.shape != (4, 3):
+            logger.error("aruco_corners must be a 4x3 numpy array representing the corners of the ArUco marker in world space")
+
+        # Tracking parameters
         try:
             with open(CONFIG_FILENAME, 'r') as fp:
                 self.parameter = json.load(fp)
@@ -155,6 +194,17 @@ class PositionEstimation:
                                     'erosion_size': 1,
                                     'area': 1,
                                     }
+            
+
+    @property
+    def aruco_center_position(self):
+        """Get the position of the center of the ArUco marker in the world space"""
+        return self.aruco_corners.mean(axis=0)
+    
+    @property
+    def aruco_size(self):
+        """Get the size of the ArUco marker in the world space, defined as the distance between the top-left and top-right corners"""
+        return np.linalg.norm(self.aruco_corners[0] - self.aruco_corners[1])
             
     
     def mask_area(self, corners:np.ndarray, frame:np.ndarray) -> np.ndarray:
@@ -179,22 +229,26 @@ class PositionEstimation:
         return mask
     
 
-    def compute_camera_to_simulation_transform(self) -> bool:
+    def compute_camera_to_world_transform(self) -> bool:
         """
         Initialize the rotation matrix and the translation vector based on the last calibration process
                                             
         Return:
             True if the initialization process is successful, False otherwise
         """
-        ids=[]
         self.initialized = False
         self.trackers_pos = []
         self.points = []
-        # If the calibration step is not require read the values of the last calibration process
-        with open(CALIBRATION_FILENAME, 'r') as file:
+
+        # If the calibration step is not required, read the values of the last calibration process
+        with open(self.calibration_file, 'r') as file:
             reader = csv.reader(file)
             next(reader)  # skipp header
-            for row in reader:
+
+            # Read ground truth points in world space and their corresponding points in camera space from the calibration file
+            for i in range(COUNT_CALIBRATION_POINTS):
+                row = next(reader)
+                logger.debug(f"Calibration point {i}: {row}")
                 self.points.append((int(row[0]), int(row[1])))
                 self.trackers_pos.append(
                     image_pixel_to_mm(
@@ -203,10 +257,10 @@ class PositionEstimation:
                         int(row[1]),  #  Y coordinate
                         self.intr
                     ))
-                ids.append([int(row[3])])   
+                self.calibration_points[i] = row[4:7]  # world coordinates of the calibration points
             self.initialized = True
         
-        logger.debug(f"Trackers positions from config file: {self.trackers_pos}")
+            logger.debug(f"Trackers positions from config file: {self.trackers_pos}")
 
         if not self.initialized:
             return False
@@ -231,7 +285,7 @@ class PositionEstimation:
                 The depth image returned by the camera
 
             aggregate: bool
-                If True, the corners positions are aggregated over multiple frames
+                If True, the corners positions are aggregated over multiple frames, the mean value is then used for the calibration. If False, only the corners positions of the current frame are used for the calibration.
 
             window: CameraFeedWindow
                 The window to display the camera feed
@@ -252,18 +306,18 @@ class PositionEstimation:
         if len(ids)>1:
             logger.error(f"Frame {self.count_calibration_frames}: More than one Aruco marker detected")
             return False
-        if ids[0] != 672: # ID of the Aruco marker provided with Emio
+        if ids[0] != self.aruco_marker_id:
             logger.error(f"Frame {self.count_calibration_frames}: Aruco marker ID is not 672: {ids}")
             return False
         
         if not aggregate:
-            self.trackers_pos = np.zeros((COUNT_POINTS, 3))
-            self.points = np.zeros((COUNT_POINTS, 2))  # Initialize points array with 5 points and 2 coordinates (x, y)
+            self.trackers_pos = np.zeros((COUNT_CALIBRATION_POINTS, 3))
+            self.points = np.zeros((COUNT_CALIBRATION_POINTS, 2))  # Initialize points array with 5 points and 2 coordinates (x, y)
             self.count_calibration_frames = 0
 
         # Add the corners positions of the marker to the 2D points and trackers_pos lists
-        temp_points = np.zeros((COUNT_POINTS, 2))
-        temp_trackers_pos = np.zeros((COUNT_POINTS, 3))
+        temp_points = np.zeros((COUNT_CALIBRATION_POINTS, 2))
+        temp_trackers_pos = np.zeros((COUNT_CALIBRATION_POINTS, 3))
         for i in range(len(corners[0][0])):
             corner=corners[0][0][i]
             depth = depth_image[int(corner[1])][int(corner[0])]
@@ -316,7 +370,11 @@ class PositionEstimation:
         self.count_calibration_frames += 1
 
         # Write the information in a CSV file for the next calibration processes
-        points_2d = [(int(self.points[i][0]/self.count_calibration_frames), int(self.points[i][1]/self.count_calibration_frames), self.trackers_pos[i][2]/self.count_calibration_frames, ids[0][0]) for i in range(len(self.points))]
+        points_2d = [(int(self.points[i][0]/self.count_calibration_frames), 
+                      int(self.points[i][1]/self.count_calibration_frames), 
+                      self.trackers_pos[i][2]/self.count_calibration_frames, 
+                      ids[0][0]) for i in range(len(self.points))]
+        
         with open(CALIBRATION_FILENAME, 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerow(['X', 'Y', 'Depth', 'id'])  # En-tête
@@ -342,7 +400,7 @@ class PositionEstimation:
         return True
 
     
-    def camera_image_to_simulation(self, x: int, y: int, depth: float) -> list[float]:
+    def camera_to_world(self, x: int, y: int, depth: float) -> list[float]:
         """
         Calculate the position of the object in our frame space
 

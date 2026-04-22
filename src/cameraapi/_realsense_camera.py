@@ -4,7 +4,7 @@ import pyrealsense2 as rs
 from typing import Tuple, Any
 from ._camera_interface import DepthCameraInterface
 from ._positionestimation import PositionEstimation
-from src.cameraapi._logging_config import logger
+from cameraapi._logging_config import logger
 
 
 def list_realsense_cameras() -> list:
@@ -40,6 +40,14 @@ class RealSenseCamera(DepthCameraInterface):
         self.profile = None
         self._intrinsics = None
         self.pc = None  # Point cloud processor
+
+    @DepthCameraInterface.fps.setter
+    def fps(self, value: int):
+        """Set the camera frames per second (fps)"""
+        if value not in [30, 60, 90]:
+            raise ValueError("FPS must be one of 30, 60, or 90")
+        self._fps = value
+
     
     def open(self) -> bool:
         """Open and initialize the RealSense camera"""
